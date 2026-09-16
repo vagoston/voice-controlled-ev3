@@ -6,7 +6,7 @@ Then connect via the LiveKit Agents playground to talk to it.
 
 from dotenv import load_dotenv
 from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, cli
-from livekit.plugins import anthropic, cartesia, deepgram, silero
+from livekit.plugins import groq, silero
 
 load_dotenv()
 
@@ -26,9 +26,9 @@ async def entrypoint(ctx: JobContext) -> None:
     await ctx.connect()
 
     session = AgentSession(
-        stt=deepgram.STT(),
-        llm=anthropic.LLM(model="claude-haiku-4-5-20251001"),
-        tts=cartesia.TTS(),
+        stt=groq.STT(),
+        llm=groq.LLM(model="openai/gpt-oss-120b"),
+        tts=groq.TTS(),
         vad=silero.VAD.load(),
     )
 
