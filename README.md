@@ -36,6 +36,10 @@ because the camera is attached to the laptop, not the robot.
    .venv\Scripts\python.exe -m pip install -r requirements.txt
    ```
 
+Every command below uses `.venv\Scripts\python.exe`. Bare `python` is the system
+interpreter and will fail on `paramiko`. Run `.venv\Scripts\activate` once if you
+prefer typing `python`.
+
 Set `EV3_DRY_RUN=1` to work without the robot. Tools then return the program
 they would have run.
 
@@ -63,7 +67,8 @@ touch = { input = 1 }
 color = { input = 3, note = "Needs to be within about 1cm of a surface..." }
 
 [geometry]
-# wheel_diameter_mm and axle_track_mm, once measured
+wheel_diameter_mm = 30
+axle_track_mm = 140
 ```
 
 Every motor is named. `left` and `right` are ordinary names that `drive()`
@@ -158,8 +163,8 @@ Implementation notes:
   frames, because blocking the event loop delays audio.
 - Recordings stop at a time limit.
 
-`python scripts/camera_selftest.py` tests capture, publishing, consumption and
-recording without the agent or a browser.
+`.venv\Scripts\python.exe scripts/camera_selftest.py` tests capture, publishing,
+consumption and recording without the agent or a browser.
 
 ## Guardrails
 
@@ -183,7 +188,7 @@ buttons on the brick are the real stop.
 ## Running
 
 ```
-python src/agent.py dev
+.venv\Scripts\python.exe src/agent.py dev
 ```
 
 Connect through the [Agents Playground](https://agents-playground.livekit.io)
@@ -192,7 +197,7 @@ and talk to it.
 Run a skill without the voice layer:
 
 ```
-python scripts/run_skill.py hardware_check '{"wait_s": 40}' --timeout 55
+.venv\Scripts\python.exe scripts/run_skill.py hardware_check '{"wait_s": 40}' --timeout 55
 ```
 
 ## Scripts
