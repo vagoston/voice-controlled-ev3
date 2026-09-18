@@ -169,7 +169,19 @@ class SSHRunner:
                     "program": program,
                 }
 
-            self._ensure_connected()
+            try:
+                self._ensure_connected()
+            except Exception as exc:
+                # Unreachable brick is an expected state (powered off, off the
+                # network), so report it rather than raising an opaque MCP error.
+                self._last_error = str(exc)
+                return {
+                    "ok": False,
+                    "dry_run": False,
+                    "connected": False,
+                    "error": f"cannot reach the robot at {self.settings.host}: {exc}",
+                }
+
             try:
                 out, err, status = self._exec(program, timeout)
             except socket.timeout:

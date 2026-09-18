@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -16,6 +17,9 @@ async def main() -> None:
         command=sys.executable,
         args=["-m", "ev3_mcp.server"],
         cwd=str(PROJECT_ROOT),
+        # The SDK passes a filtered environment by default, so the smoke test
+        # has to hand the server its own env to force dry-run.
+        env={**os.environ, "EV3_DRY_RUN": "1"},
     )
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
