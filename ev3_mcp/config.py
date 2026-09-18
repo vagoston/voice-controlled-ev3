@@ -39,14 +39,6 @@ class Settings:
     max_timeout: float
     skills_dir: Path
 
-    @property
-    def left_motor(self) -> str:
-        return self.profile.left_motor
-
-    @property
-    def right_motor(self) -> str:
-        return self.profile.right_motor
-
     def clamp_timeout(self, timeout_s: float | None) -> float:
         value = self.default_timeout if timeout_s is None else float(timeout_s)
         return max(1.0, min(value, self.max_timeout))

@@ -41,18 +41,8 @@ def _api_summary() -> str:
 
 
 def _hardware_summary() -> str:
-    """What is actually plugged in, so the model need not guess or probe."""
-    profile = get_runner().settings.profile
-    motors = [f"  {profile.left_motor} = left drive", f"  {profile.right_motor} = right drive"]
-    motors += [f"  {port} = {role}" for role, port in sorted(profile.named_motors.items())]
-    sensors = [f"  in{n} = {kind}" for kind, n in sorted(profile.sensors.items(), key=lambda kv: kv[1])]
-    missing = sorted({"ultrasonic", "gyro"} - set(profile.sensors))
-    lines = [f"This robot ({profile.name}) has:", *motors, *sensors]
-    if missing:
-        lines.append(
-            "  NOT fitted: " + ", ".join(missing) + " -- helpers for these return None."
-        )
-    return "\n".join(lines)
+    """What is attached and what to know about it, so the model need not guess."""
+    return get_runner().settings.profile.describe()
 
 
 CODE_RULES = f"""
@@ -206,16 +196,14 @@ def list_devices() -> dict[str, Any]:
     actual_sensors = {s["address"].rsplit(":in", 1)[-1] for s in found.get("sensors", [])}
 
     problems = []
-    for role, port in [
-        ("left drive", profile.left_motor),
-        ("right drive", profile.right_motor),
-        *sorted(profile.named_motors.items()),
-    ]:
-        if port not in actual_motors:
-            problems.append(f"profile expects {role} on port {port}, nothing is there")
-    for kind, number in sorted(profile.sensors.items()):
-        if str(number) not in actual_sensors:
-            problems.append(f"profile expects {kind} on input {number}, nothing is there")
+    for name, motor in sorted(profile.motors.items()):
+        if motor.port not in actual_motors:
+            problems.append(f"profile expects {name} on port {motor.port}, nothing is there")
+    for sensor in sorted(profile.sensors.values(), key=lambda s: s.input):
+        if str(sensor.input) not in actual_sensors:
+            problems.append(
+                f"profile expects {sensor.kind} on input {sensor.input}, nothing is there"
+            )
 
     result["devices"] = found
     result["profile"] = profile.summary()

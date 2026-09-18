@@ -54,25 +54,39 @@ rebuilding the robot.
 
 ```toml
 [motors]
-left = "B"
-right = "C"
-
-[motors.named]
-head = "A"
+left = { port = "B", kind = "large" }
+right = { port = "C", kind = "large" }
+head = { port = "A", kind = "medium", note = "Starting position is unknown..." }
 
 [sensors]
-touch = 1
-color = 3
-infrared = 4
+touch = { input = 1 }
+color = { input = 3, note = "Needs to be within about 1cm of a surface..." }
+
+[geometry]
+# wheel_diameter_mm and axle_track_mm, once measured
 ```
 
-Three things use it:
+Every motor is named. `left` and `right` are ordinary names that `drive()`
+happens to require; a robot without them loads fine, and `drive()`, `forward()`,
+`stop()` and the other tank helpers report what motors do exist instead.
+
+A motor or sensor can be written as a bare port (`head = "A"`, `touch = 1`) when
+there is nothing else to say about it.
+
+`note` fields are sent to the agent. Use them for anything that cannot be worked
+out from the wiring: a sensor's usable range, a motor whose starting position is
+unknown. `#` comments are for the human reader and the agent never sees them.
+
+Three things use the profile:
 
 - `brick_api` opens sensors at their configured input. A sensor the profile does
   not list is reported as absent instead of probed for.
-- Skills address motors by role: `motor("head", 30, 0.5)`.
-- The model is given the layout in its tool descriptions, so it does not have to
-  guess what is fitted.
+- Skills address motors by name: `motor("head", 30, 0.5)`.
+- The model is given the layout, the notes, and the geometry in its tool
+  descriptions, so it does not have to guess what is fitted.
+
+Without `[geometry]`, distances and turn angles cannot be computed, and the
+agent is told to use durations and call them approximate.
 
 `list_devices` compares the profile against what the brick reports and lists any
 differences.

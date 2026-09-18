@@ -1,32 +1,33 @@
-# Hardware profile: the single source of truth for what is plugged in where.
+# What is attached to the robot, where, and what the agent should know about it.
+# Edit this after rebuilding. Nothing else hardcodes ports.
 #
-# Rebuilt the robot? Edit this file, nothing else. `list_devices` compares it
-# against what the brick actually reports and tells you where they disagree.
+# Motors take port letters A-D, sensors take input numbers 1-4, matching the
+# labels on the brick.
 #
-# Motors are port letters A-D, sensors are input numbers 1-4, matching the
-# labels printed on the brick.
+# `note` fields are sent to the agent. Put anything it could not work out from
+# the wiring there, such as a sensor's usable range or a motor whose starting
+# position is unknown. Use `#` comments only for things the agent does not need.
 
 name = "EV3D4"
 
 [motors]
-left = "B"   # left drive, large motor
-right = "C"  # right drive, large motor
-
-[motors.named]
-# Anything that is not drive. Skills address these by name: motor("head", ...)
-head = "A"   # medium motor
+# `left` and `right` are ordinary names, but drive() requires both.
+left = { port = "B", kind = "large" }
+right = { port = "C", kind = "large" }
+head = { port = "A", kind = "medium", note = "Starting position is unknown: the head keeps whatever angle it was left at, and there is no home switch. Centre it yourself before treating its heading as meaningful, and remember turning the head does not turn the robot." }
 
 [sensors]
-# Only list what is actually attached. Anything missing here is reported as
-# absent rather than probed for, so a skill asking for it gets told plainly.
-touch = 1
-color = 3
-infrared = 4
-# ultrasonic = ...   # not on this build
-# gyro = ...         # not on this build
+touch = { input = 1 }
+color = { input = 3, note = "Needs to be within about 1cm of a surface. Further away it reads near-zero reflectance, which looks like black regardless of the real colour." }
+infrared = { input = 4, note = "Proximity is 0-100 over roughly 70cm, not centimetres. Also does beacon seek, but only one mode at a time and switching costs about 45ms." }
 
-# [geometry]
-# Wheel diameter and axle track in mm, needed before movement can be expressed
-# in real units (forward(cm=30), turn(degrees=90)) instead of guessed durations.
-# Deliberately absent rather than guessed -- measure the robot and fill these in
-# when that work happens.
+# Not fitted on this build: ultrasonic, gyro, sound.
+# Their helpers return None rather than guessing.
+
+[geometry]
+# Measure these, in millimetres, to unlock distances and turn angles
+# (forward(cm=30), turn(degrees=90)) instead of guessed durations.
+#   wheel_diameter_mm: outer diameter of a driven wheel
+#   axle_track_mm: centre-to-centre distance between the two driven wheels
+# Left unset until measured. Guessed numbers would produce confidently wrong
+# movement.

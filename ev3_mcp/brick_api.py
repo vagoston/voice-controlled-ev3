@@ -14,8 +14,9 @@ import time
 _devices = {}
 _started = time.time()
 
-_LEFT_PORT = _PROFILE["left"]
-_RIGHT_PORT = _PROFILE["right"]
+_MOTORS = _PROFILE["motors"]
+_LEFT_PORT = _MOTORS.get("left")
+_RIGHT_PORT = _MOTORS.get("right")
 
 
 def _clamp(value, low, high):
@@ -53,6 +54,13 @@ def _port(letter):
 
 
 def _tank():
+    if _LEFT_PORT is None or _RIGHT_PORT is None:
+        raise ValueError(
+            "This robot has no left/right drive motors. "
+            "Named motors are: {}. Use motor(name, ...) instead of drive().".format(
+                ", ".join(sorted(_MOTORS)) or "none"
+            )
+        )
     if "tank" not in _devices:
         from ev3dev2.motor import MoveTank
 
@@ -94,9 +102,11 @@ def sleep(seconds):
 
 def drive(left_pct, right_pct, seconds=None):
     """Run both drive motors. Blocks for `seconds`, then stops; else returns immediately."""
+    # Resolve the motors first, so a profile without drive motors says so
+    # instead of failing somewhere less obvious.
+    tank = _tank()
     from ev3dev2.motor import SpeedPercent
 
-    tank = _tank()
     left = SpeedPercent(_speed(left_pct))
     right = SpeedPercent(_speed(right_pct))
     if seconds is None:
@@ -122,21 +132,16 @@ def spin_right(speed_pct=30, seconds=0.5):
 
 
 def resolve_port(ref):
-    """Port letter for a role name from the profile ('head', 'left') or a letter."""
+    """Port letter for a motor name from the profile, or a bare port letter."""
     key = str(ref).lower()
-    if key == "left":
-        return _LEFT_PORT
-    if key == "right":
-        return _RIGHT_PORT
-    named = _PROFILE.get("named", {})
-    if key in named:
-        return named[key]
+    if key in _MOTORS:
+        return _MOTORS[key]
     return str(ref).upper()
 
 
 def motor_roles():
     """Names this robot's motors answer to, from the profile."""
-    return ["left", "right"] + sorted(_PROFILE.get("named", {}).keys())
+    return sorted(_MOTORS.keys())
 
 
 def _motor(port):
