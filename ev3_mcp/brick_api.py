@@ -4,14 +4,18 @@ Runs on the EV3 under MicroPython (ev3dev), never imported on the host -- the
 SSH runner ships it as text. Target Python 3.5 / MicroPython: no f-strings, no
 modern typing syntax.
 
-The host prepends _MAX_DURATION, _BUDGET_S, _LEFT_PORT and _RIGHT_PORT before
-this source, so those names already exist when this executes.
+The host prepends _MAX_DURATION, _BUDGET_S and _PROFILE (the hardware profile
+from robot.toml) before this source, so those names already exist when this
+executes.
 """
 
 import time
 
 _devices = {}
 _started = time.time()
+
+_LEFT_PORT = _PROFILE["left"]
+_RIGHT_PORT = _PROFILE["right"]
 
 
 def _clamp(value, low, high):
@@ -56,14 +60,28 @@ def _tank():
     return _devices["tank"]
 
 
-def _sensor(key, factory):
-    """Instantiate a sensor once; None (cached) when it isn't plugged in."""
-    if key not in _devices:
-        try:
-            _devices[key] = factory()
-        except Exception:
-            _devices[key] = None
-    return _devices[key]
+def _input(number):
+    from ev3dev2.sensor import INPUT_1, INPUT_2, INPUT_3, INPUT_4
+
+    return {1: INPUT_1, 2: INPUT_2, 3: INPUT_3, 4: INPUT_4}[number]
+
+
+def _sensor(kind, factory):
+    """Instantiate a profiled sensor once.
+
+    A sensor the profile does not list is reported absent without probing for
+    it, so a skill asking for one gets told plainly instead of guessing.
+    """
+    if kind not in _devices:
+        number = _PROFILE.get("sensors", {}).get(kind)
+        if number is None:
+            _devices[kind] = None
+        else:
+            try:
+                _devices[kind] = factory(_input(number))
+            except Exception:
+                _devices[kind] = None
+    return _devices[kind]
 
 
 def log(message):
@@ -103,8 +121,26 @@ def spin_right(speed_pct=30, seconds=0.5):
     drive(speed_pct, -speed_pct, seconds)
 
 
+def resolve_port(ref):
+    """Port letter for a role name from the profile ('head', 'left') or a letter."""
+    key = str(ref).lower()
+    if key == "left":
+        return _LEFT_PORT
+    if key == "right":
+        return _RIGHT_PORT
+    named = _PROFILE.get("named", {})
+    if key in named:
+        return named[key]
+    return str(ref).upper()
+
+
+def motor_roles():
+    """Names this robot's motors answer to, from the profile."""
+    return ["left", "right"] + sorted(_PROFILE.get("named", {}).keys())
+
+
 def _motor(port):
-    key = str(port).upper()
+    key = resolve_port(port)
     address = _port(key)
     if key not in _devices:
         try:
@@ -117,7 +153,7 @@ def _motor(port):
 
 
 def motor(port, speed_pct=30, seconds=1.0):
-    """Run one motor by port letter. Returns False when that port is empty."""
+    """Run one motor by role name ('head') or port letter. False when absent."""
     from ev3dev2.motor import SpeedPercent
 
     device = _motor(port)
@@ -148,10 +184,10 @@ def _safe_stop():
 def distance_cm():
     """Ultrasonic distance in cm, or None when no ultrasonic sensor is attached."""
 
-    def make():
+    def make(addr):
         from ev3dev2.sensor.lego import UltrasonicSensor
 
-        return UltrasonicSensor()
+        return UltrasonicSensor(addr)
 
     sensor = _sensor("ultrasonic", make)
     return None if sensor is None else sensor.distance_centimeters
@@ -160,10 +196,10 @@ def distance_cm():
 def proximity():
     """Infrared proximity 0-100 (lower is closer), or None when no IR sensor."""
 
-    def make():
+    def make(addr):
         from ev3dev2.sensor.lego import InfraredSensor
 
-        return InfraredSensor()
+        return InfraredSensor(addr)
 
     sensor = _sensor("infrared", make)
     return None if sensor is None else sensor.proximity
@@ -182,10 +218,10 @@ def obstacle_cm():
 
 
 def touch_pressed():
-    def make():
+    def make(addr):
         from ev3dev2.sensor.lego import TouchSensor
 
-        return TouchSensor()
+        return TouchSensor(addr)
 
     sensor = _sensor("touch", make)
     return None if sensor is None else bool(sensor.is_pressed)
@@ -194,30 +230,30 @@ def touch_pressed():
 def color():
     """Detected colour name (e.g. 'Red'), or None when no colour sensor is attached."""
 
-    def make():
+    def make(addr):
         from ev3dev2.sensor.lego import ColorSensor
 
-        return ColorSensor()
+        return ColorSensor(addr)
 
     sensor = _sensor("color", make)
     return None if sensor is None else sensor.color_name
 
 
 def reflected_light():
-    def make():
+    def make(addr):
         from ev3dev2.sensor.lego import ColorSensor
 
-        return ColorSensor()
+        return ColorSensor(addr)
 
     sensor = _sensor("color", make)
     return None if sensor is None else sensor.reflected_light_intensity
 
 
 def gyro_angle():
-    def make():
+    def make(addr):
         from ev3dev2.sensor.lego import GyroSensor
 
-        return GyroSensor()
+        return GyroSensor(addr)
 
     sensor = _sensor("gyro", make)
     return None if sensor is None else sensor.angle

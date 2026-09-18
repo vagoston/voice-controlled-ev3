@@ -40,9 +40,28 @@ def _api_summary() -> str:
     return "\n".join(lines)
 
 
+def _hardware_summary() -> str:
+    """What is actually plugged in, so the model need not guess or probe."""
+    profile = get_runner().settings.profile
+    motors = [f"  {profile.left_motor} = left drive", f"  {profile.right_motor} = right drive"]
+    motors += [f"  {port} = {role}" for role, port in sorted(profile.named_motors.items())]
+    sensors = [f"  in{n} = {kind}" for kind, n in sorted(profile.sensors.items(), key=lambda kv: kv[1])]
+    missing = sorted({"ultrasonic", "gyro"} - set(profile.sensors))
+    lines = [f"This robot ({profile.name}) has:", *motors, *sensors]
+    if missing:
+        lines.append(
+            "  NOT fitted: " + ", ".join(missing) + " -- helpers for these return None."
+        )
+    return "\n".join(lines)
+
+
 CODE_RULES = f"""
 Code runs ON the EV3 under MicroPython (Python 3.5): no f-strings, no modern
 typing syntax. Use .format() for strings.
+
+{_hardware_summary()}
+
+Address motors by role, not port letter: motor("head", 30, 0.5).
 
 These helpers are already defined -- do not import ev3dev2 yourself:
 {_api_summary()}
@@ -166,10 +185,43 @@ def stop() -> dict[str, Any]:
 
 @mcp.tool(
     name="list_devices",
-    description="List the motors and sensors currently plugged into the EV3, with ports and drivers.",
+    description=(
+        "List what is actually plugged into the EV3 and check it against the "
+        "configured hardware profile. Use this when something behaves as if a "
+        "motor or sensor is missing."
+    ),
 )
 def list_devices() -> dict[str, Any]:
-    return _run_body("import json; print(json.dumps(devices()))", timeout_s=15)
+    result = _run_body("import json; print(json.dumps(devices()))", timeout_s=15)
+    raw = (result.get("stdout") or "").strip()
+    if not result.get("ok") or not raw:
+        return result
+    try:
+        found = json.loads(raw)
+    except json.JSONDecodeError:
+        return result
+
+    profile = get_runner().settings.profile
+    actual_motors = {m["address"].rsplit(":out", 1)[-1] for m in found.get("motors", [])}
+    actual_sensors = {s["address"].rsplit(":in", 1)[-1] for s in found.get("sensors", [])}
+
+    problems = []
+    for role, port in [
+        ("left drive", profile.left_motor),
+        ("right drive", profile.right_motor),
+        *sorted(profile.named_motors.items()),
+    ]:
+        if port not in actual_motors:
+            problems.append(f"profile expects {role} on port {port}, nothing is there")
+    for kind, number in sorted(profile.sensors.items()):
+        if str(number) not in actual_sensors:
+            problems.append(f"profile expects {kind} on input {number}, nothing is there")
+
+    result["devices"] = found
+    result["profile"] = profile.summary()
+    result["matches_profile"] = not problems
+    result["problems"] = problems
+    return result
 
 
 @mcp.tool(

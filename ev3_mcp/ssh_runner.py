@@ -38,12 +38,9 @@ class SSHRunner:
 
     def _preamble(self, budget_s: float) -> str:
         s = self.settings
-        return (
-            "_MAX_DURATION = {0}\n"
-            "_BUDGET_S = {1}\n"
-            "_LEFT_PORT = {2!r}\n"
-            "_RIGHT_PORT = {3!r}\n"
-        ).format(s.max_duration, budget_s, s.left_motor, s.right_motor)
+        return ("_MAX_DURATION = {0}\n_BUDGET_S = {1}\n_PROFILE = {2!r}\n").format(
+            s.max_duration, budget_s, s.profile.as_dict()
+        )
 
     def build_program(self, body: str, budget_s: float | None = None) -> str:
         api = BRICK_API_PATH.read_text(encoding="utf-8")
@@ -237,10 +234,9 @@ class SSHRunner:
             "host": s.host,
             "user": s.user,
             "python_bin": s.python_bin,
-            "left_motor": s.left_motor,
-            "right_motor": s.right_motor,
-            "max_speed": s.max_speed,
+            "profile": s.profile.summary(),
             "max_duration": s.max_duration,
+            "default_timeout": s.default_timeout,
             "skills_dir": str(s.skills_dir),
             "busy": busy,
             "last_error": self._last_error,

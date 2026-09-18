@@ -34,6 +34,9 @@ room.** The MCP server SSHes to a brick and has no business holding a camera.
    - `EV3_HOST` / `EV3_USER` / `EV3_PASSWORD` for the brick. ev3dev's defaults
      are `robot` / `maker`, reachable at `ev3dev.local`.
 
+   Ports and roles are **not** environment variables — they live in
+   `robot.toml`, described below.
+
 2. Install dependencies:
    ```
    python -m venv .venv
@@ -59,7 +62,7 @@ every run, so they can call each other.
 The model manages them through `define_skill`, `get_skill`, `list_skills`,
 `run_skill` and `delete_skill`. Skills are written against the helpers in
 `ev3_mcp/brick_api.py` (`drive`, `obstacle_cm`, `touch_pressed`, `color`,
-`motor`, `wheel_degrees`, …).
+`motor`, `wheel_degrees`, …), which resolve ports through the hardware profile.
 
 Brick-side code runs under **MicroPython (Python 3.4)** — no f-strings.
 
@@ -160,21 +163,26 @@ python scripts/run_skill.py hardware_check '{"wait_s": 40}' --timeout 55
 - `scripts/test_connectivity.py` — verify LiveKit credentials.
 - `scripts/test_llm_latency.py` — time-to-first-token for Groq models.
 
-## Hardware as tested
+## Hardware profile
 
-An EV3D4 build. This layout is currently hardcoded in env vars and assumed by
-`brick_api`; moving it into a declarative profile is still to do.
+**`robot.toml` is the source of truth** for what is plugged in where — not this
+README, and not environment variables. Rebuilt the robot? Edit that one file.
 
-Sensors are mode-based — one mode at a time, and switching costs ~15 ms on the
-colour sensor, ~45 ms on the IR sensor.
+It feeds three things that used to disagree with each other:
 
-| Port | Device |
-|---|---|
-| outA | Medium motor (head) |
-| outB / outC | Large motors (drive) |
-| in1 | Touch sensor |
-| in3 | Colour sensor |
-| in4 | IR sensor (proximity, and beacon seek) |
+- `brick_api` addresses sensors by their configured input and skips probing for
+  sensors the profile doesn't list, so a missing one is reported plainly.
+- Motors are addressable **by role**: `motor("head", 30, 0.5)` rather than a port
+  letter memorised from documentation.
+- The model is told the actual layout in its tool descriptions, instead of
+  inferring it. That would have prevented a real bug — `follow_wall` was
+  originally written against an ultrasonic sensor this build doesn't have.
 
-No ultrasonic or gyro on this build; `distance_cm()` and `gyro_angle()` return
-`None`, and `obstacle_cm()` falls back to scaled IR proximity.
+`list_devices` compares the profile against what the brick actually reports and
+names any disagreement, so the two can't silently drift.
+
+Anything invalid is rejected at load: duplicate ports, a named motor reusing a
+drive port, unknown sensor types, out-of-range inputs, two sensors on one input.
+
+Sensors are also mode-based — one mode at a time, and switching costs ~15 ms on
+the colour sensor, ~45 ms on the IR sensor.

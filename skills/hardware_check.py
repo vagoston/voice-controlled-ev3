@@ -39,25 +39,29 @@ def hardware_check(wait_s=40):
     print("touch:        {}".format(touch_pressed()))
 
     print("--- motors ---")
-    # Head is geared and may hit a stop, so give it less than the drive wheels.
-    for port, speed, secs in (("A", 15, 0.25), ("B", 20, 0.3), ("C", 20, 0.3)):
-        start = motor_position(port)
+    for role in motor_roles():
+        # Non-drive motors are geared and may hit a stop, so they get less.
+        drive_motor = role in ("left", "right")
+        speed = 20 if drive_motor else 15
+        secs = 0.3 if drive_motor else 0.25
+
+        start = motor_position(role)
         if start is None:
-            print("{}: EMPTY (no motor on this port)".format(port))
+            print("{}: EMPTY (no motor on port {})".format(role, resolve_port(role)))
             continue
 
-        motor(port, speed, secs)
-        moved = motor_position(port)
+        motor(role, speed, secs)
+        moved = motor_position(role)
 
-        motor(port, -speed, secs)
-        settled = motor_position(port)
+        motor(role, -speed, secs)
+        settled = motor_position(role)
 
         delta = moved - start
         residual = settled - start
         verdict = "OK" if abs(delta) > 5 else "NO MOVEMENT"
         print(
-            "{}: {} turned {}deg, back to within {}deg".format(
-                port, verdict, delta, residual
+            "{} (port {}): {} turned {}deg, back to within {}deg".format(
+                role, resolve_port(role), verdict, delta, residual
             )
         )
 
