@@ -85,8 +85,16 @@ Three things use the profile:
 - The model is given the layout, the notes, and the geometry in its tool
   descriptions, so it does not have to guess what is fitted.
 
-Without `[geometry]`, distances and turn angles cannot be computed, and the
-agent is told to use durations and call them approximate.
+With `[geometry]` set, skills can move in real units: `drive_cm(20)` and
+`turn(90)` work from encoder counts rather than guessed durations. Both return
+what the encoders measured, so a skill can compare that against what it asked
+for. Without geometry those calls refuse, and the agent is told to use durations
+and call them approximate.
+
+`reversed = true` on a motor flips its positive direction, which is needed when
+drive motors are mirror-mounted. Run `calibrate_movement` to check: if
+`drive(50, 50)` spins instead of driving, set it on one motor; if the robot
+drives backwards, set it on both.
 
 `list_devices` compares the profile against what the brick reports and lists any
 differences.

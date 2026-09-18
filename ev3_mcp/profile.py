@@ -31,6 +31,13 @@ class Motor:
     port: str
     kind: str | None = None
     note: str | None = None
+    reversed: bool = False
+    """True when positive speed turns this motor the 'wrong' way, as happens
+    with mirror-mounted drive motors."""
+
+    @property
+    def sign(self) -> int:
+        return -1 if self.reversed else 1
 
 
 @dataclass(frozen=True)
@@ -91,6 +98,7 @@ class RobotProfile:
         return {
             "name": self.name,
             "motors": {name: m.port for name, m in self.motors.items()},
+            "reversed": [name for name, m in self.motors.items() if m.reversed],
             "sensors": {s.kind: s.input for s in self.sensors.values()},
             "geometry": {
                 "wheel_diameter_mm": self.geometry.wheel_diameter_mm,
@@ -171,8 +179,18 @@ def _parse_motor(name: str, value: object, path: Path) -> Motor:
     if kind not in MOTOR_KINDS:
         raise ProfileError(f"{path}: motor {name!r} has unknown kind {kind!r}")
 
+    reversed_ = value.get("reversed", False)
+    if not isinstance(reversed_, bool):
+        raise ProfileError(f"{path}: motor {name!r} reversed must be true or false")
+
     note = value.get("note")
-    return Motor(name=name, port=port, kind=kind, note=str(note) if note else None)
+    return Motor(
+        name=name,
+        port=port,
+        kind=kind,
+        note=str(note) if note else None,
+        reversed=reversed_,
+    )
 
 
 def _parse_sensor(kind: str, value: object, path: Path) -> Sensor:

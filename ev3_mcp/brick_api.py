@@ -17,6 +17,13 @@ _started = time.time()
 _MOTORS = _PROFILE["motors"]
 _LEFT_PORT = _MOTORS.get("left")
 _RIGHT_PORT = _MOTORS.get("right")
+_REVERSED = _PROFILE.get("reversed", [])
+_LEFT_SIGN = -1 if "left" in _REVERSED else 1
+_RIGHT_SIGN = -1 if "right" in _REVERSED else 1
+
+_GEOMETRY = _PROFILE.get("geometry", {})
+_WHEEL_MM = _GEOMETRY.get("wheel_diameter_mm")
+_TRACK_MM = _GEOMETRY.get("axle_track_mm")
 
 
 def _clamp(value, low, high):
@@ -107,12 +114,86 @@ def drive(left_pct, right_pct, seconds=None):
     tank = _tank()
     from ev3dev2.motor import SpeedPercent
 
-    left = SpeedPercent(_speed(left_pct))
-    right = SpeedPercent(_speed(right_pct))
+    left = SpeedPercent(_speed(left_pct) * _LEFT_SIGN)
+    right = SpeedPercent(_speed(right_pct) * _RIGHT_SIGN)
     if seconds is None:
         tank.on(left, right)
     else:
         tank.on_for_seconds(left, right, _bounded(seconds))
+
+
+def _require_geometry():
+    if _WHEEL_MM is None or _TRACK_MM is None:
+        raise ValueError(
+            "This robot's geometry is not measured, so distances and angles "
+            "cannot be computed. Use drive()/forward() with durations and say "
+            "the result is approximate."
+        )
+
+
+def mm_per_wheel_degree():
+    _require_geometry()
+    return (3.141592653589793 * _WHEEL_MM) / 360.0
+
+
+def wheel_degrees_per_robot_degree():
+    """Counter-rotating both wheels, this reduces to track / diameter."""
+    _require_geometry()
+    return _TRACK_MM / float(_WHEEL_MM)
+
+
+def drive_cm(cm, speed_pct=40):
+    """Drive straight by encoder count. Returns the cm actually travelled.
+
+    The return value comes from the encoders, so compare it with what you asked
+    for and report the difference rather than assuming it went where you said.
+    """
+    from ev3dev2.motor import SpeedPercent
+
+    tank = _tank()
+    per_degree = mm_per_wheel_degree()
+    wheel_deg = abs(float(cm)) * 10.0 / per_degree
+    magnitude = _speed(abs(speed_pct))
+    direction = 1 if cm >= 0 else -1
+
+    before = wheel_degrees()
+    tank.on_for_degrees(
+        SpeedPercent(magnitude * direction * _LEFT_SIGN),
+        SpeedPercent(magnitude * direction * _RIGHT_SIGN),
+        wheel_deg,
+    )
+    after = wheel_degrees()
+
+    left_moved = (after[0] - before[0]) * _LEFT_SIGN
+    right_moved = (after[1] - before[1]) * _RIGHT_SIGN
+    return ((left_moved + right_moved) / 2.0) * per_degree / 10.0
+
+
+def turn(degrees, speed_pct=30):
+    """Turn on the spot. Positive is clockwise seen from above.
+
+    Returns the degrees actually turned according to the encoders, which will
+    differ from the request when the wheels slip.
+    """
+    from ev3dev2.motor import SpeedPercent
+
+    tank = _tank()
+    ratio = wheel_degrees_per_robot_degree()
+    wheel_deg = abs(float(degrees)) * ratio
+    magnitude = _speed(abs(speed_pct))
+    direction = 1 if degrees >= 0 else -1
+
+    before = wheel_degrees()
+    tank.on_for_degrees(
+        SpeedPercent(magnitude * direction * _LEFT_SIGN),
+        SpeedPercent(-magnitude * direction * _RIGHT_SIGN),
+        wheel_deg,
+    )
+    after = wheel_degrees()
+
+    left_moved = abs((after[0] - before[0]) * _LEFT_SIGN)
+    right_moved = abs((after[1] - before[1]) * _RIGHT_SIGN)
+    return direction * ((left_moved + right_moved) / 2.0) / ratio
 
 
 def forward(speed_pct=40, seconds=1.0):
