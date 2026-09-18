@@ -175,14 +175,25 @@ class RoomVideo:
             encoder, self._encoder = self._encoder, None
             asyncio.create_task(self._drain(encoder, time.monotonic() - self._started_at))
 
+    def _accept(self, frame: rtc.VideoFrame) -> None:
+        self._latest = frame
+        self._latest_at = time.monotonic()
+        if self._encoder is not None:
+            self._feed(frame)
+
+    def submit_local_frame(self, frame: rtc.VideoFrame) -> None:
+        """Frames from a camera this process publishes.
+
+        An SFU never echoes a track back to its publisher, so these arrive here
+        directly instead of through track_subscribed.
+        """
+        self._accept(frame)
+
     async def _consume(self, track: rtc.Track) -> None:
         stream = rtc.VideoStream(track)
         try:
             async for event in stream:
-                self._latest = event.frame
-                self._latest_at = time.monotonic()
-                if self._encoder is not None:
-                    self._feed(event.frame)
+                self._accept(event.frame)
         except asyncio.CancelledError:
             raise
         except Exception:

@@ -27,6 +27,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 load_dotenv(PROJECT_ROOT / ".env")
 
+from src.camera import LocalCamera  # noqa: E402
 from src.room_video import RoomVideo  # noqa: E402
 
 logger = logging.getLogger("agent")
@@ -168,6 +169,15 @@ async def entrypoint(ctx: JobContext) -> None:
 
     video = RoomVideo(ctx.room, RECORDINGS_DIR)
     ctx.add_shutdown_callback(video.aclose)
+
+    # The agent runs on the laptop, so it publishes the camera itself rather
+    # than waiting for a browser tab to join. Absent or covered cameras are
+    # normal; the look tools report that.
+    camera = LocalCamera(on_frame=video.submit_local_frame)
+    if await camera.start(ctx.room):
+        ctx.add_shutdown_callback(camera.aclose)
+    else:
+        logger.info("running without a camera; look() will say so")
 
     ev3_server = mcp.MCPServerStdio(
         command=sys.executable,

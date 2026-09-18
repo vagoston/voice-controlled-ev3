@@ -69,9 +69,21 @@ A fixed camera watches the room, giving the agent a third-person view of the
 robot — an external observer rather than robot vision, so it can check what the
 robot *claims* against what actually happened.
 
-Publish the laptop camera once into the LiveKit room and everything reads that
-one track: your phone renders it, the agent samples frames, the recorder encodes
-them. Nothing opens the webcam twice.
+The agent publishes the laptop camera into the room itself, and everything reads
+that one track: your phone renders it, the agent samples frames, the recorder
+encodes them. Nothing opens the webcam twice, and no browser tab is involved.
+
+Capture uses PyAV — already a dependency, since it also encodes the recordings —
+and selects the camera **by name**, which matters on laptops that expose a second
+infrared camera for Windows Hello. Index-based selection can silently grab that
+one and hand the vision model a greyscale IR image. Override with
+`EV3_CAMERA_DEVICE` if yours is not called `Integrated Camera`.
+
+There is no enable/disable setting: whether the camera is usable is a physical
+decision, not a config flag, and certainly not an agent-controllable tool. Note
+that **covering the lens is not the same as the camera being off** — frames keep
+flowing, just dark, so the agent will describe a dark image rather than reporting
+no camera.
 
 Three native agent tools:
 
@@ -97,8 +109,8 @@ than blocking, because stalling the event loop delays audio and turn handling.
 Recordings auto-stop at a time limit for the same reason motor runs do — a
 forgotten recording just fills a disk instead of hitting a wall.
 
-To publish the camera without writing capture code, run
-`python scripts/camera_test.py`, which writes a join page you can open in Chrome.
+`python scripts/camera_selftest.py` checks the whole path — open, publish,
+consume, record — without needing the agent or a browser.
 
 ## Guardrails
 
@@ -139,8 +151,11 @@ python scripts/run_skill.py hardware_check '{"wait_s": 40}' --timeout 55
 ## Scripts
 
 - `scripts/run_skill.py` — run any saved skill against the robot.
-- `scripts/camera_test.py` — publish a camera, grab one frame, ask the vision
-  model about it. Saves the frame so you can see what it was given.
+- `scripts/camera_selftest.py` — open, publish, consume and record the camera,
+  end to end, with no browser.
+- `scripts/camera_test.py` — grab one frame and ask the vision model about it.
+  Saves the frame so you can see what it was given. Publishes from a browser
+  tab, so it also works when the camera is on another machine.
 - `scripts/test_mcp_server.py` — spawn the MCP server over stdio and list its tools.
 - `scripts/test_connectivity.py` — verify LiveKit credentials.
 - `scripts/test_llm_latency.py` — time-to-first-token for Groq models.
