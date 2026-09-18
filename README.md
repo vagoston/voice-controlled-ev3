@@ -21,6 +21,9 @@ The MCP server ships Python source to the brick over SSH (base64 through
 instead of round-tripping through the model. Whatever the program prints comes
 back as the tool result.
 
+Tools are split along one seam: **MCP is the robot, native agent tools are the
+room.** The MCP server SSHes to a brick and has no business holding a camera.
+
 ## Setup
 
 1. Copy `.env.example` to `.env` and fill in:
@@ -40,6 +43,12 @@ back as the tool result.
 **`EV3_DRY_RUN=1` develops without hardware** — tools return the program they
 would have run instead of running it.
 
+Note that LiveKit Cloud may have **agent session recording enabled server-side**,
+in which case session audio, transcript, traces and logs upload to your LiveKit
+project by default. `AgentSession.start(record=False)` turns it off, or pass a
+dict like `record={"audio": False}` for finer control. This is separate from the
+room camera recording below, which is local and only runs when asked.
+
 ## Skills
 
 Skills are `.py` files in `skills/`, one per skill, each defining a function
@@ -53,6 +62,43 @@ The model manages them through `define_skill`, `get_skill`, `list_skills`,
 `motor`, `wheel_degrees`, …).
 
 Brick-side code runs under **MicroPython (Python 3.4)** — no f-strings.
+
+## Room camera
+
+A fixed camera watches the room, giving the agent a third-person view of the
+robot — an external observer rather than robot vision, so it can check what the
+robot *claims* against what actually happened.
+
+Publish the laptop camera once into the LiveKit room and everything reads that
+one track: your phone renders it, the agent samples frames, the recorder encodes
+them. Nothing opens the webcam twice.
+
+Three native agent tools:
+
+- `look(question)` — sends the latest frame to `qwen/qwen3.8-27b` (same Groq key)
+  and returns its answer.
+- `start_recording()` / `stop_recording()` — writes MP4 to `recordings/` and
+  reports path, duration and frame count.
+
+Recording is local rather than LiveKit Egress. Egress runs on LiveKit's servers,
+so on Cloud it writes to S3/GCS/Azure — "record to the laptop" would mean a round
+trip out to a bucket and back. PyAV ships with `livekit-agents` anyway.
+
+Two things learned the hard way, both encoded in the implementation:
+
+- **Never use the first frame.** WebRTC starts on a low-resolution layer: the
+  first frame measured 384×216 where the settled one was 1280×720.
+- **Ask narrow questions.** On a synthetic test image the model invented a detail
+  that wasn't there. On a real photo it was accurate on every claim. Open-ended
+  prompts invite narration; treat the camera as a second opinion, not an oracle.
+
+Encoding runs on a worker thread behind a bounded queue that drops frames rather
+than blocking, because stalling the event loop delays audio and turn handling.
+Recordings auto-stop at a time limit for the same reason motor runs do — a
+forgotten recording just fills a disk instead of hitting a wall.
+
+To publish the camera without writing capture code, run
+`python scripts/camera_test.py`, which writes a join page you can open in Chrome.
 
 ## Guardrails
 
@@ -93,6 +139,8 @@ python scripts/run_skill.py hardware_check '{"wait_s": 40}' --timeout 55
 ## Scripts
 
 - `scripts/run_skill.py` — run any saved skill against the robot.
+- `scripts/camera_test.py` — publish a camera, grab one frame, ask the vision
+  model about it. Saves the frame so you can see what it was given.
 - `scripts/test_mcp_server.py` — spawn the MCP server over stdio and list its tools.
 - `scripts/test_connectivity.py` — verify LiveKit credentials.
 - `scripts/test_llm_latency.py` — time-to-first-token for Groq models.
@@ -100,7 +148,7 @@ python scripts/run_skill.py hardware_check '{"wait_s": 40}' --timeout 55
 ## Hardware as tested
 
 An EV3D4 build. This layout is currently hardcoded in env vars and assumed by
-`brick_api`; moving it into a declarative profile is [CRY-20].
+`brick_api`; moving it into a declarative profile is still to do.
 
 Sensors are mode-based — one mode at a time, and switching costs ~15 ms on the
 colour sensor, ~45 ms on the IR sensor.
