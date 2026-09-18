@@ -13,13 +13,11 @@ name = "EV3D4"
 [motors]
 # `left` and `right` are ordinary names, but drive() requires both.
 #
-# `reversed = true` flips a motor whose positive direction is backwards, which
-# happens when drive motors are mirror-mounted. UNVERIFIED on this build: no
-# test has yet driven both wheels together. If drive(50, 50) spins the robot
-# instead of moving it forward, set reversed on one of them. If it drives
-# backwards, set it on both.
-left = { port = "B", kind = "large", reversed = false }
-right = { port = "C", kind = "large", reversed = false }
+# Both drive motors are mirror-mounted, so positive speed drives backwards.
+# Verified 2026-09-18: with reversed = false the robot drove backwards on
+# calibrate_movement.
+left = { port = "B", kind = "large", reversed = true }
+right = { port = "C", kind = "large", reversed = true }
 head = { port = "A", kind = "medium", note = "Starting position is unknown: the head keeps whatever angle it was left at, and there is no home switch. Centre it yourself before treating its heading as meaningful, and remember turning the head does not turn the robot." }
 
 [sensors]

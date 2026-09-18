@@ -142,31 +142,50 @@ def wheel_degrees_per_robot_degree():
     return _TRACK_MM / float(_WHEEL_MM)
 
 
-def drive_cm(cm, speed_pct=40):
-    """Drive straight by encoder count. Returns the cm actually travelled.
+def travelled_cm(before, after):
+    """Straight-line distance between two wheel_degrees() readings."""
+    left_fwd = (after[0] - before[0]) * _LEFT_SIGN
+    right_fwd = (after[1] - before[1]) * _RIGHT_SIGN
+    return ((left_fwd + right_fwd) / 2.0) * mm_per_wheel_degree() / 10.0
 
-    The return value comes from the encoders, so compare it with what you asked
-    for and report the difference rather than assuming it went where you said.
+
+def _run_until(left_speed, right_speed, reached):
+    """Run both drive motors until `reached()` says so, then brake.
+
+    Closed on our own encoder readings rather than ev3dev2's position targets,
+    which were measured to aim at a stale absolute position that survives a
+    reset, and to refuse to counter-rotate at all.
     """
     from ev3dev2.motor import SpeedPercent
 
     tank = _tank()
-    per_degree = mm_per_wheel_degree()
-    wheel_deg = abs(float(cm)) * 10.0 / per_degree
-    magnitude = _speed(abs(speed_pct))
+    tank.on(SpeedPercent(_speed(left_speed)), SpeedPercent(_speed(right_speed)))
+    while not reached() and not out_of_time():
+        time.sleep(0.01)
+    tank.off(brake=True)
+    time.sleep(0.15)  # let it settle before the closing measurement
+
+
+def drive_cm(cm, speed_pct=40):
+    """Drive straight. Returns the cm actually travelled, from the encoders.
+
+    Compare the return value with what you asked for and report the difference
+    rather than assuming it went where you said.
+    """
+    target = abs(float(cm))
     direction = 1 if cm >= 0 else -1
-
+    magnitude = _speed(abs(speed_pct))
     before = wheel_degrees()
-    tank.on_for_degrees(
-        SpeedPercent(magnitude * direction * _LEFT_SIGN),
-        SpeedPercent(magnitude * direction * _RIGHT_SIGN),
-        wheel_deg,
-    )
-    after = wheel_degrees()
 
-    left_moved = (after[0] - before[0]) * _LEFT_SIGN
-    right_moved = (after[1] - before[1]) * _RIGHT_SIGN
-    return ((left_moved + right_moved) / 2.0) * per_degree / 10.0
+    def reached():
+        return abs(travelled_cm(before, wheel_degrees())) >= target
+
+    _run_until(
+        magnitude * direction * _LEFT_SIGN,
+        magnitude * direction * _RIGHT_SIGN,
+        reached,
+    )
+    return travelled_cm(before, wheel_degrees())
 
 
 def turn(degrees, speed_pct=30):
@@ -175,25 +194,33 @@ def turn(degrees, speed_pct=30):
     Returns the degrees actually turned according to the encoders, which will
     differ from the request when the wheels slip.
     """
-    from ev3dev2.motor import SpeedPercent
-
-    tank = _tank()
-    ratio = wheel_degrees_per_robot_degree()
-    wheel_deg = abs(float(degrees)) * ratio
-    magnitude = _speed(abs(speed_pct))
+    target = abs(float(degrees))
     direction = 1 if degrees >= 0 else -1
-
+    magnitude = _speed(abs(speed_pct))
     before = wheel_degrees()
-    tank.on_for_degrees(
-        SpeedPercent(magnitude * direction * _LEFT_SIGN),
-        SpeedPercent(-magnitude * direction * _RIGHT_SIGN),
-        wheel_deg,
-    )
-    after = wheel_degrees()
 
-    left_moved = abs((after[0] - before[0]) * _LEFT_SIGN)
-    right_moved = abs((after[1] - before[1]) * _RIGHT_SIGN)
-    return direction * ((left_moved + right_moved) / 2.0) / ratio
+    def reached():
+        return abs(turned_degrees(before, wheel_degrees())) >= target
+
+    _run_until(
+        magnitude * direction * _LEFT_SIGN,
+        -magnitude * direction * _RIGHT_SIGN,
+        reached,
+    )
+    return turned_degrees(before, wheel_degrees())
+
+
+def turned_degrees(before, after):
+    """Heading change between two wheel_degrees() readings.
+
+    Uses the difference between the wheels rather than their average. An
+    average reads a half-finished turn as a whole one, because it cannot tell
+    counter-rotation from one wheel doing all the work.
+    """
+    ratio = wheel_degrees_per_robot_degree()
+    left_fwd = (after[0] - before[0]) * _LEFT_SIGN
+    right_fwd = (after[1] - before[1]) * _RIGHT_SIGN
+    return (left_fwd - right_fwd) / (2.0 * ratio)
 
 
 def forward(speed_pct=40, seconds=1.0):
