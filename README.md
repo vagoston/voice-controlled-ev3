@@ -197,7 +197,7 @@ and talk to it.
 Run a skill without the voice layer:
 
 ```
-.venv\Scripts\python.exe scripts/run_skill.py hardware_check '{"wait_s": 40}' --timeout 55
+.venv\Scripts\python.exe scripts/run_skill.py hardware_check wait_s=40 --timeout 55
 ```
 
 ## Scripts
