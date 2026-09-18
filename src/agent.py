@@ -46,10 +46,19 @@ How to work:
 - Skills can call other skills, so build small pieces and compose them.
 - Whatever your code prints comes back to you. Print the facts you want to report.
 
-Using the camera:
-- look() answers a question about what the camera sees right now. Ask something
-  narrow -- "which side of the room is the robot on" beats "describe the scene",
-  because open-ended questions invite invention.
+Using the camera, which is often NOT available:
+- The room camera is optional and frequently switched off. Treat sight as a bonus,
+  never as something you can count on.
+- Do not promise to look before you have looked. Call look() first, then say what
+  you found -- saying "let me check the camera" and then discovering it is off
+  makes you look broken.
+- When look() or a recording tool reports the camera is off or stalled, that is a
+  normal state, not a failure. Say so once, plainly, and carry on with the robot's
+  own sensors. Do not retry, and do not apologise repeatedly.
+- Never describe the room from memory or from an earlier look. If you cannot see
+  now, you cannot see.
+- Ask narrow questions -- "which side of the room is the robot on" beats "describe
+  the scene", because open-ended questions invite invention.
 - The camera is a second opinion, not proof. If it disagrees with what the robot's
   sensors reported, say both rather than picking a winner.
 - Only start_recording when the user asks. Tell them where it was saved afterwards.
@@ -69,13 +78,21 @@ def build_camera_tools(video: RoomVideo) -> list:
         name="look",
         description=(
             "Look through the room camera and answer a question about what is "
-            "visible right now. Keep the question narrow and concrete."
+            "visible right now. Keep the question narrow and concrete. "
+            "The camera is OPTIONAL and often off -- this returns a plain "
+            "'camera is off' message when it cannot see, which is normal, not "
+            "an error worth retrying."
         ),
     )
     async def look(question: str) -> str:
         frame = video.latest_frame()
         if frame is None:
-            return "No camera is publishing to the room, so I cannot see anything."
+            if video.status == "stalled":
+                return (
+                    "The room camera stopped sending frames, so I cannot see "
+                    "anything right now."
+                )
+            return "The room camera is off, so I cannot see anything right now."
 
         jpeg = images.encode(frame, images.EncodeOptions(format="JPEG", quality=85))
         reply = Groq().chat.completions.create(
@@ -101,13 +118,17 @@ def build_camera_tools(video: RoomVideo) -> list:
 
     @function_tool(
         name="start_recording",
-        description="Start recording the room camera to a video file. Only when asked.",
+        description=(
+            "Start recording the room camera to a video file. Only when asked. "
+            "Needs the camera to be on, which it often is not -- say so plainly "
+            "rather than retrying."
+        ),
     )
     async def start_recording() -> str:
         try:
             path = video.start_recording()
         except RuntimeError as exc:
-            return f"Could not start recording: {exc}"
+            return f"Could not start recording: {exc}."
         return f"Recording to {path.name}. It stops automatically if left running."
 
     @function_tool(
@@ -119,7 +140,15 @@ def build_camera_tools(video: RoomVideo) -> list:
             result = await video.stop_recording()
         except RuntimeError as exc:
             return f"Could not stop recording: {exc}"
-        note = " (it had already hit its time limit)" if result.auto_stopped else ""
+        if not result.saved:
+            reason = "the camera went off" if result.camera_lost else "no frames arrived"
+            return f"Nothing was recorded -- {reason}, so there is no file."
+        if result.camera_lost:
+            note = " (the camera went off part way, so this is what I had)"
+        elif result.auto_stopped:
+            note = " (it had already hit its time limit)"
+        else:
+            note = ""
         dropped = f", {result.dropped} frames dropped" if result.dropped else ""
         return (
             f"Saved {result.path.name}: {result.seconds:.0f} seconds, "
