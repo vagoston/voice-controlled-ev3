@@ -86,17 +86,37 @@ def spin_right(speed_pct=30, seconds=0.5):
     drive(speed_pct, -speed_pct, seconds)
 
 
-def motor(port, speed_pct=30, seconds=1.0):
-    """Run a single motor by port letter -- e.g. the medium motor driving the head."""
-    from ev3dev2.motor import Motor, SpeedPercent
-
+def _motor(port):
     key = str(port).upper()
+    address = _port(key)
     if key not in _devices:
-        _devices[key] = Motor(_port(key))
-    _devices[key].on_for_seconds(
+        try:
+            from ev3dev2.motor import Motor
+
+            _devices[key] = Motor(address)
+        except Exception:
+            _devices[key] = None
+    return _devices[key]
+
+
+def motor(port, speed_pct=30, seconds=1.0):
+    """Run one motor by port letter. Returns False when that port is empty."""
+    from ev3dev2.motor import SpeedPercent
+
+    device = _motor(port)
+    if device is None:
+        return False
+    device.on_for_seconds(
         SpeedPercent(_clamp(float(speed_pct), -_MAX_SPEED, _MAX_SPEED)),
         _clamp(float(seconds), 0.0, _MAX_DURATION),
     )
+    return True
+
+
+def motor_position(port):
+    """Encoder position in degrees for one motor port, or None when empty."""
+    device = _motor(port)
+    return None if device is None else device.position
 
 
 def stop():
