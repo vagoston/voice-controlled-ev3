@@ -86,12 +86,25 @@ def spin_right(speed_pct=30, seconds=0.5):
     drive(speed_pct, -speed_pct, seconds)
 
 
+def motor(port, speed_pct=30, seconds=1.0):
+    """Run a single motor by port letter -- e.g. the medium motor driving the head."""
+    from ev3dev2.motor import Motor, SpeedPercent
+
+    key = str(port).upper()
+    if key not in _devices:
+        _devices[key] = Motor(_port(key))
+    _devices[key].on_for_seconds(
+        SpeedPercent(_clamp(float(speed_pct), -_MAX_SPEED, _MAX_SPEED)),
+        _clamp(float(seconds), 0.0, _MAX_DURATION),
+    )
+
+
 def stop():
     _tank().off(brake=True)
 
 
 def distance_cm():
-    """Ultrasonic distance, or None when no ultrasonic sensor is attached."""
+    """Ultrasonic distance in cm, or None when no ultrasonic sensor is attached."""
 
     def make():
         from ev3dev2.sensor.lego import UltrasonicSensor
@@ -100,6 +113,30 @@ def distance_cm():
 
     sensor = _sensor("ultrasonic", make)
     return None if sensor is None else sensor.distance_centimeters
+
+
+def proximity():
+    """Infrared proximity 0-100 (lower is closer), or None when no IR sensor."""
+
+    def make():
+        from ev3dev2.sensor.lego import InfraredSensor
+
+        return InfraredSensor()
+
+    sensor = _sensor("infrared", make)
+    return None if sensor is None else sensor.proximity
+
+
+def obstacle_cm():
+    """Distance ahead in cm; approximate when derived from IR. None if neither sensor."""
+    exact = distance_cm()
+    if exact is not None:
+        return exact
+    prox = proximity()
+    if prox is None:
+        return None
+    # IR proximity is a 0-100 percentage of roughly 70cm of usable range.
+    return prox * 0.7
 
 
 def touch_pressed():

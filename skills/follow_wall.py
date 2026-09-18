@@ -1,20 +1,26 @@
-'Follow a wall using the ultrasonic sensor.'
+"""Drive forward, steering away whenever an obstacle gets close. Reports corrections made."""
 
 
-def follow_wall(seconds=5, target_cm=15, speed=30):
+def follow_wall(seconds=5, target_cm=25, speed=30):
     import time
+
     end = time.time() + seconds
-    hits = 0
+    corrections = 0
+    closest = None
+
     while time.time() < end:
-        d = distance_cm()
-        if d is None:
-            print("no ultrasonic sensor")
+        ahead = obstacle_cm()
+        if ahead is None:
+            print("no proximity sensor attached")
             return
-        if d < target_cm:
+        if closest is None or ahead < closest:
+            closest = ahead
+        if ahead < target_cm:
             drive(speed, -speed)
-            hits += 1
+            corrections += 1
         else:
             drive(speed, speed)
         time.sleep(0.05)
+
     stop()
-    print("corrections: {}".format(hits))
+    print("corrections: {}  closest: {:.0f}cm".format(corrections, closest))
