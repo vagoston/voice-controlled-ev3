@@ -23,13 +23,6 @@ def _env_float(name: str, default: float) -> float:
     return float(raw)
 
 
-def _env_int(name: str, default: int) -> int:
-    raw = os.getenv(name)
-    if raw is None or not raw.strip():
-        return default
-    return int(raw)
-
-
 @dataclass(frozen=True)
 class Settings:
     host: str
@@ -40,7 +33,6 @@ class Settings:
     python_bin: str
     left_motor: str
     right_motor: str
-    max_speed: int
     max_duration: float
     default_timeout: float
     max_timeout: float
@@ -70,9 +62,10 @@ def load_settings() -> Settings:
         python_bin=os.getenv("EV3_PYTHON_BIN", "micropython").strip() or "micropython",
         left_motor=os.getenv("EV3_LEFT_MOTOR", "B").strip().upper(),
         right_motor=os.getenv("EV3_RIGHT_MOTOR", "C").strip().upper(),
-        max_speed=_env_int("EV3_MAX_SPEED", 80),
-        max_duration=_env_float("EV3_MAX_DURATION", 10.0),
-        default_timeout=_env_float("EV3_DEFAULT_TIMEOUT", 20.0),
-        max_timeout=_env_float("EV3_MAX_TIMEOUT", 60.0),
+        # Loose sanity bounds against typos, not policy. The runtime budget is
+        # what actually bounds a run.
+        max_duration=_env_float("EV3_MAX_DURATION", 120.0),
+        default_timeout=_env_float("EV3_DEFAULT_TIMEOUT", 30.0),
+        max_timeout=_env_float("EV3_MAX_TIMEOUT", 600.0),
         skills_dir=resolved_skills,
     )

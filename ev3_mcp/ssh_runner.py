@@ -36,18 +36,26 @@ class SSHRunner:
 
     # --- source assembly --------------------------------------------------
 
-    def _preamble(self) -> str:
+    def _preamble(self, budget_s: float) -> str:
         s = self.settings
         return (
-            "_MAX_SPEED = {0}\n"
-            "_MAX_DURATION = {1}\n"
+            "_MAX_DURATION = {0}\n"
+            "_BUDGET_S = {1}\n"
             "_LEFT_PORT = {2!r}\n"
             "_RIGHT_PORT = {3!r}\n"
-        ).format(s.max_speed, s.max_duration, s.left_motor, s.right_motor)
+        ).format(s.max_duration, budget_s, s.left_motor, s.right_motor)
 
-    def build_program(self, body: str) -> str:
+    def build_program(self, body: str, budget_s: float | None = None) -> str:
         api = BRICK_API_PATH.read_text(encoding="utf-8")
-        return self._preamble() + "\n" + api + "\n\n# --- host-supplied ---\n" + body + "\n"
+        budget = self.settings.clamp_timeout(budget_s)
+        return (
+            self._preamble(budget)
+            + "\n"
+            + api
+            + "\n\n# --- host-supplied ---\n"
+            + body
+            + "\n\n_safe_stop()\n"
+        )
 
     # --- connection -------------------------------------------------------
 
@@ -146,7 +154,9 @@ class SSHRunner:
         bypass_lock: bool = False,
     ) -> dict[str, Any]:
         timeout = self.settings.clamp_timeout(timeout_s)
-        program = self.build_program(body)
+        # The brick gets slightly less than the host allows, so it can exit
+        # cleanly and report partial results before the watchdog cuts it off.
+        program = self.build_program(body, max(1.0, timeout - 2.0))
 
         if not bypass_lock:
             with self._busy_lock:
@@ -198,6 +208,10 @@ class SSHRunner:
                 }
 
             ok = status == 0
+            if not ok:
+                # A crash can leave motors running: ev3dev motor state lives in
+                # sysfs and outlives the process that set it.
+                self.emergency_stop()
             self._last_error = None if ok else (err.strip() or f"exited {status}")
             return {
                 "ok": ok,

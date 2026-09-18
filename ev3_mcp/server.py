@@ -48,8 +48,15 @@ These helpers are already defined -- do not import ev3dev2 yourself:
 {_api_summary()}
 
 Sensor helpers return None when that sensor is not attached; check before use.
-Speeds and durations are clamped on the brick. Anything you print() comes back
-to you as stdout, so print what you want to report.
+
+Every run has a time budget. Poll out_of_time() in long loops and exit cleanly
+so your partial results still come back -- if you overrun it, the host kills the
+run and you report nothing. Durations are clamped to the remaining budget.
+Motors are always stopped when a run ends, so continuous motion has to happen
+inside one program.
+
+Anything you print() comes back to you as stdout, so print what you want to
+report.
 """.strip()
 
 

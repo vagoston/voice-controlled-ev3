@@ -8,12 +8,16 @@ def hardware_check(wait_s=40):
         print("FAIL: no touch sensor attached")
         return
 
+    # Leave enough budget for the motor tests, so overrunning the wait still
+    # produces a report rather than being killed silently.
+    wait_s = min(wait_s, max(0.0, time_left() - 6.0))
+
     beep()
-    print("armed, waiting up to {}s for the button".format(wait_s))
+    print("armed, waiting up to {:.0f}s for the button".format(wait_s))
 
     deadline = time.time() + wait_s
     pressed = False
-    while time.time() < deadline:
+    while time.time() < deadline and not out_of_time():
         if touch_pressed():
             pressed = True
             break

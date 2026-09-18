@@ -4,17 +4,38 @@ Runs on the EV3 under MicroPython (ev3dev), never imported on the host -- the
 SSH runner ships it as text. Target Python 3.5 / MicroPython: no f-strings, no
 modern typing syntax.
 
-The host prepends _MAX_SPEED, _MAX_DURATION, _LEFT_PORT and _RIGHT_PORT before
+The host prepends _MAX_DURATION, _BUDGET_S, _LEFT_PORT and _RIGHT_PORT before
 this source, so those names already exist when this executes.
 """
 
 import time
 
 _devices = {}
+_started = time.time()
 
 
 def _clamp(value, low, high):
     return max(low, min(value, high))
+
+
+def time_left():
+    """Seconds remaining in this run's budget before the host kills it."""
+    return max(0.0, _BUDGET_S - (time.time() - _started))
+
+
+def out_of_time():
+    """True once the budget is spent. Poll this in long loops and exit cleanly."""
+    return time_left() <= 0.0
+
+
+def _bounded(seconds):
+    """Clamp a duration to the sanity cap and to whatever budget remains."""
+    return _clamp(float(seconds), 0.0, min(_MAX_DURATION, time_left()))
+
+
+def _speed(percent):
+    """Validity bound only -- the hardware's real range, not a safety policy."""
+    return _clamp(float(percent), -100.0, 100.0)
 
 
 def _port(letter):
@@ -50,24 +71,20 @@ def log(message):
 
 
 def sleep(seconds):
-    time.sleep(_clamp(float(seconds), 0.0, _MAX_DURATION))
+    time.sleep(_bounded(seconds))
 
 
 def drive(left_pct, right_pct, seconds=None):
     """Run both drive motors. Blocks for `seconds`, then stops; else returns immediately."""
     from ev3dev2.motor import SpeedPercent
 
-    left = _clamp(float(left_pct), -_MAX_SPEED, _MAX_SPEED)
-    right = _clamp(float(right_pct), -_MAX_SPEED, _MAX_SPEED)
     tank = _tank()
+    left = SpeedPercent(_speed(left_pct))
+    right = SpeedPercent(_speed(right_pct))
     if seconds is None:
-        tank.on(SpeedPercent(left), SpeedPercent(right))
+        tank.on(left, right)
     else:
-        tank.on_for_seconds(
-            SpeedPercent(left),
-            SpeedPercent(right),
-            _clamp(float(seconds), 0.0, _MAX_DURATION),
-        )
+        tank.on_for_seconds(left, right, _bounded(seconds))
 
 
 def forward(speed_pct=40, seconds=1.0):
@@ -106,10 +123,7 @@ def motor(port, speed_pct=30, seconds=1.0):
     device = _motor(port)
     if device is None:
         return False
-    device.on_for_seconds(
-        SpeedPercent(_clamp(float(speed_pct), -_MAX_SPEED, _MAX_SPEED)),
-        _clamp(float(seconds), 0.0, _MAX_DURATION),
-    )
+    device.on_for_seconds(SpeedPercent(_speed(speed_pct)), _bounded(seconds))
     return True
 
 
@@ -121,6 +135,14 @@ def motor_position(port):
 
 def stop():
     _tank().off(brake=True)
+
+
+def _safe_stop():
+    """Appended by the host after every program: motors must not outlive a run."""
+    try:
+        stop()
+    except Exception:
+        pass
 
 
 def distance_cm():
