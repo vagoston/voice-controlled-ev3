@@ -10,6 +10,7 @@ model. A comment would be invisible to it.
 
 from __future__ import annotations
 
+import math
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,6 +48,19 @@ class Geometry:
     @property
     def complete(self) -> bool:
         return self.wheel_diameter_mm is not None and self.axle_track_mm is not None
+
+    @property
+    def wheel_circumference_mm(self) -> float:
+        return math.pi * self.wheel_diameter_mm
+
+    @property
+    def mm_per_wheel_degree(self) -> float:
+        return self.wheel_circumference_mm / 360.0
+
+    @property
+    def wheel_degrees_per_robot_degree(self) -> float:
+        """Counter-rotating both wheels, this reduces to track / diameter."""
+        return self.axle_track_mm / self.wheel_diameter_mm
 
 
 @dataclass(frozen=True)
@@ -115,9 +129,20 @@ class RobotProfile:
             lines.append(f"  not fitted: {', '.join(missing)} (those helpers return None)")
 
         if self.geometry.complete:
+            geo = self.geometry
             lines.append(
-                f"  geometry: {self.geometry.wheel_diameter_mm:g}mm wheels, "
-                f"{self.geometry.axle_track_mm:g}mm apart"
+                f"  geometry: {geo.wheel_diameter_mm:g}mm wheels, "
+                f"{geo.axle_track_mm:g}mm apart. Use wheel_degrees() and these"
+                " conversions rather than guessing at durations:"
+            )
+            lines.append(
+                f"    1 wheel degree = {geo.mm_per_wheel_degree:.3f}mm travelled"
+                f" ({geo.wheel_circumference_mm:.0f}mm per wheel turn)"
+            )
+            lines.append(
+                f"    turning on the spot, 1 degree of robot heading ="
+                f" {geo.wheel_degrees_per_robot_degree:.2f} wheel degrees on each"
+                " wheel, counter-rotating"
             )
         else:
             lines.append(

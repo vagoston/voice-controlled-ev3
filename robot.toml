@@ -25,9 +25,5 @@ infrared = { input = 4, note = "Proximity is 0-100 over roughly 70cm, not centim
 # Their helpers return None rather than guessing.
 
 [geometry]
-# Measure these, in millimetres, to unlock distances and turn angles
-# (forward(cm=30), turn(degrees=90)) instead of guessed durations.
-#   wheel_diameter_mm: outer diameter of a driven wheel
-#   axle_track_mm: centre-to-centre distance between the two driven wheels
-# Left unset until measured. Guessed numbers would produce confidently wrong
-# movement.
+wheel_diameter_mm = 30   # outer diameter of a driven wheel
+axle_track_mm = 140      # centre to centre between the two driven wheels
