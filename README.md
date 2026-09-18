@@ -1,41 +1,34 @@
 # Voice-Controlled EV3
 
-A LiveKit voice agent that controls a LEGO Mindstorms EV3 rover by **writing
-Python that runs on the robot**, rather than steering it one command at a time.
-
-Talk to it, and it composes code, saves reusable skills, runs them on the brick,
-and reports back what actually happened.
+A LiveKit voice agent that drives a LEGO Mindstorms EV3. You speak to it, it
+writes Python, the robot runs that Python, and the agent reports what the
+program printed.
 
 ## Architecture
 
-Three agents with different strengths:
-
-| Layer | Role |
+| Layer | Job |
 |---|---|
-| You | High-level goals, spoken |
-| LLM (Groq `gpt-oss-120b`) | Judgement, code authoring, reporting — slow feedback loop |
-| EV3 brick (ev3dev) | Fast reactive execution — tight sensor loops at full speed |
+| You | Say what you want done |
+| LLM (Groq `gpt-oss-120b`) | Decide what to do, write the code, report back |
+| EV3 brick (ev3dev) | Run the code, including tight sensor loops |
 
-The MCP server ships Python source to the brick over SSH (base64 through
-`micropython -c`), so a wall-following loop runs *on the robot* at its own speed
-instead of round-tripping through the model. Whatever the program prints comes
-back as the tool result.
+The MCP server base64-encodes Python source and pipes it to `micropython -c`
+over SSH. A wall-following loop therefore runs on the brick at full speed
+instead of one tool call per motor command. The program's stdout is returned as
+the tool result.
 
-Tools are split along one seam: **MCP is the robot, native agent tools are the
-room.** The MCP server SSHes to a brick and has no business holding a camera.
+Robot tools come from the MCP server. Camera tools are native agent tools,
+because the camera is attached to the laptop, not the robot.
 
 ## Setup
 
 1. Copy `.env.example` to `.env` and fill in:
    - `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` from
-     [LiveKit Cloud](https://cloud.livekit.io) (Settings > Keys).
-   - `GROQ_API_KEY` from the [Groq console](https://console.groq.com/keys) —
-     covers STT (Whisper), LLM, and TTS with one key.
-   - `EV3_HOST` / `EV3_USER` / `EV3_PASSWORD` for the brick. ev3dev's defaults
-     are `robot` / `maker`, reachable at `ev3dev.local`.
-
-   Ports and roles are **not** environment variables — they live in
-   `robot.toml`, described below.
+     [LiveKit Cloud](https://cloud.livekit.io), under Settings > Keys.
+   - `GROQ_API_KEY` from the [Groq console](https://console.groq.com/keys). One
+     key covers STT, LLM and TTS.
+   - `EV3_HOST`, `EV3_USER`, `EV3_PASSWORD`. ev3dev ships with `robot` / `maker`
+     and announces itself as `ev3dev.local`.
 
 2. Install dependencies:
    ```
@@ -43,98 +36,127 @@ room.** The MCP server SSHes to a brick and has no business holding a camera.
    .venv\Scripts\python.exe -m pip install -r requirements.txt
    ```
 
-**`EV3_DRY_RUN=1` develops without hardware** — tools return the program they
-would have run instead of running it.
+Set `EV3_DRY_RUN=1` to work without the robot. Tools then return the program
+they would have run.
 
-Note that LiveKit Cloud may have **agent session recording enabled server-side**,
-in which case session audio, transcript, traces and logs upload to your LiveKit
-project by default. `AgentSession.start(record=False)` turns it off, or pass a
-dict like `record={"audio": False}` for finer control. This is separate from the
-room camera recording below, which is local and only runs when asked.
+Port assignments are not environment variables. They live in `robot.toml`.
+
+LiveKit Cloud may enable agent session recording at the project level. When it
+is on, session audio, transcripts, traces and logs upload to your LiveKit
+project. Turn it off with `AgentSession.start(record=False)`, or pass something
+like `record={"audio": False}` for partial control. This is unrelated to the
+camera recording described below.
+
+## Hardware profile
+
+`robot.toml` defines which motor and sensor is on which port. Edit it after
+rebuilding the robot.
+
+```toml
+[motors]
+left = "B"
+right = "C"
+
+[motors.named]
+head = "A"
+
+[sensors]
+touch = 1
+color = 3
+infrared = 4
+```
+
+Three things use it:
+
+- `brick_api` opens sensors at their configured input. A sensor the profile does
+  not list is reported as absent instead of probed for.
+- Skills address motors by role: `motor("head", 30, 0.5)`.
+- The model is given the layout in its tool descriptions, so it does not have to
+  guess what is fitted.
+
+`list_devices` compares the profile against what the brick reports and lists any
+differences.
+
+Bad configurations fail at load: duplicate drive ports, a named motor reusing a
+drive port, unknown sensor types, inputs outside 1-4, two sensors on one input.
+
+EV3 sensors hold one mode at a time. Switching modes costs about 15 ms on the
+colour sensor and 45 ms on the IR sensor, so a loop that alternates modes runs
+much slower than one that does not.
 
 ## Skills
 
-Skills are `.py` files in `skills/`, one per skill, each defining a function
-matching its filename. They live on the host rather than the brick's SD card, so
-they survive reflashes and stay reviewable. All skills are shipped together on
-every run, so they can call each other.
+A skill is a `.py` file in `skills/` defining a function with the same name as
+the file. Skills are stored on the laptop, not the brick, so they survive an SD
+card reflash. Every skill is sent with every run, so skills can call each other.
 
-The model manages them through `define_skill`, `get_skill`, `list_skills`,
-`run_skill` and `delete_skill`. Skills are written against the helpers in
-`ev3_mcp/brick_api.py` (`drive`, `obstacle_cm`, `touch_pressed`, `color`,
-`motor`, `wheel_degrees`, …), which resolve ports through the hardware profile.
+The model manages them with `define_skill`, `get_skill`, `list_skills`,
+`run_skill` and `delete_skill`, and writes them against the helpers in
+`ev3_mcp/brick_api.py`: `drive`, `motor`, `obstacle_cm`, `touch_pressed`,
+`color`, `wheel_degrees` and so on.
 
-Brick-side code runs under **MicroPython (Python 3.4)** — no f-strings.
+Brick-side code runs under MicroPython 3.4. No f-strings.
 
 ## Room camera
 
-A fixed camera watches the room, giving the agent a third-person view of the
-robot — an external observer rather than robot vision, so it can check what the
-robot *claims* against what actually happened.
+The camera watches the robot from outside, which lets the agent check what the
+robot reported against what actually happened.
 
-The agent publishes the laptop camera into the room itself, and everything reads
-that one track: your phone renders it, the agent samples frames, the recorder
-encodes them. Nothing opens the webcam twice, and no browser tab is involved.
+The agent captures the laptop camera and publishes it to the LiveKit room. Your
+phone, the `look` tool and the recorder all read that one track. No browser tab
+is needed.
 
-Capture uses PyAV — already a dependency, since it also encodes the recordings —
-and selects the camera **by name**, which matters on laptops that expose a second
-infrared camera for Windows Hello. Index-based selection can silently grab that
-one and hand the vision model a greyscale IR image. Override with
-`EV3_CAMERA_DEVICE` if yours is not called `Integrated Camera`.
+Tools:
 
-There is no enable/disable setting: whether the camera is usable is a physical
-decision, not a config flag, and certainly not an agent-controllable tool. Note
-that **covering the lens is not the same as the camera being off** — frames keep
-flowing, just dark, so the agent will describe a dark image rather than reporting
-no camera.
+- `look(question)` sends the current frame to `qwen/qwen3.8-27b` and returns the
+  answer.
+- `start_recording()` and `stop_recording()` write MP4 files to `recordings/`.
+  Stopping reports the path, duration and frame count.
 
-Three native agent tools:
+Capture uses PyAV, which is already installed for encoding. It selects the
+camera by name. Laptops with Windows Hello expose a second infrared camera, and
+selecting by index can pick that one instead. Set `EV3_CAMERA_DEVICE` if yours
+is not called `Integrated Camera`.
 
-- `look(question)` — sends the latest frame to `qwen/qwen3.8-27b` (same Groq key)
-  and returns its answer.
-- `start_recording()` / `stop_recording()` — writes MP4 to `recordings/` and
-  reports path, duration and frame count.
+There is no setting to enable or disable the camera. Covering the lens is not
+the same as turning it off: frames keep arriving, so the agent describes a dark
+image rather than reporting no camera.
 
-Recording is local rather than LiveKit Egress. Egress runs on LiveKit's servers,
-so on Cloud it writes to S3/GCS/Azure — "record to the laptop" would mean a round
-trip out to a bucket and back. PyAV ships with `livekit-agents` anyway.
+Recording is local. LiveKit Egress runs on LiveKit's servers and writes to
+S3, GCS or Azure, so using it would mean uploading to a bucket and downloading
+again.
 
-Two things learned the hard way, both encoded in the implementation:
+Implementation notes:
 
-- **Never use the first frame.** WebRTC starts on a low-resolution layer: the
-  first frame measured 384×216 where the settled one was 1280×720.
-- **Ask narrow questions.** On a synthetic test image the model invented a detail
-  that wasn't there. On a real photo it was accurate on every claim. Open-ended
-  prompts invite narration; treat the camera as a second opinion, not an oracle.
+- The first frame after a track starts is low resolution. Measured 384x216
+  against 1280x720 once the encoder had ramped up. Wait before capturing.
+- Ask `look` narrow questions. On a sparse test image the model added a detail
+  that was not there. On a real photo every claim was correct.
+- Encoding runs on a worker thread behind a bounded queue. A full queue drops
+  frames, because blocking the event loop delays audio.
+- Recordings stop at a time limit.
 
-Encoding runs on a worker thread behind a bounded queue that drops frames rather
-than blocking, because stalling the event loop delays audio and turn handling.
-Recordings auto-stop at a time limit for the same reason motor runs do — a
-forgotten recording just fills a disk instead of hitting a wall.
-
-`python scripts/camera_selftest.py` checks the whole path — open, publish,
-consume, record — without needing the agent or a browser.
+`python scripts/camera_selftest.py` tests capture, publishing, consumption and
+recording without the agent or a browser.
 
 ## Guardrails
 
-Bounded runtime is the only real one, and it exists because the failure that
-actually happens is a loop that never exits. Two tiers:
+Every run has a time limit, in two layers:
 
-- **Brick-side budget** — the program can check `time_left()` / `out_of_time()`
-  and exit cleanly, so partial results still come back. Durations are clamped to
-  whatever budget remains.
-- **Host-side watchdog** — kills the run and forces a stop. No useful output, but
-  it is the guarantee.
+- The brick knows its remaining budget through `time_left()` and
+  `out_of_time()`, so a skill can stop early and still print its results.
+  Durations are clamped to the remaining budget.
+- The host kills the run when the limit passes and forces a stop. Nothing is
+  returned, but the robot stops.
 
-`_safe_stop()` is appended to every program, and the host forces a stop after any
-crash or timeout, because ev3dev motor state lives in sysfs and outlives the
-process that set it. **Motors never persist across tool calls** — continuous
-motion belongs inside a single program.
+Motor state on ev3dev lives in sysfs and outlives the process that set it. Every
+program therefore ends with `_safe_stop()`, and the host also forces a stop
+after a crash or timeout. Motors do not keep running between tool calls, so
+continuous movement has to happen inside one program.
 
-There is deliberately no speed cap. It prevented nothing real (80% is plenty fast
-to drive off a table) while implying a safety it did not provide. Speed is bounded
-to ±100 only because that is the hardware's actual range. These are guardrails
-against mistakes, not enforcement — the physical buttons remain the backstop.
+There is no speed limit. Speed is clamped to ±100 because that is the hardware
+range. These limits catch mistakes; they are not a security boundary, and the
+buttons on the brick are the real stop.
 
 ## Running
 
@@ -142,10 +164,10 @@ against mistakes, not enforcement — the physical buttons remain the backstop.
 python src/agent.py dev
 ```
 
-Then connect via the [Agents Playground](https://agents-playground.livekit.io)
+Connect through the [Agents Playground](https://agents-playground.livekit.io)
 and talk to it.
 
-To run a skill directly, without the voice layer:
+Run a skill without the voice layer:
 
 ```
 python scripts/run_skill.py hardware_check '{"wait_s": 40}' --timeout 55
@@ -153,36 +175,12 @@ python scripts/run_skill.py hardware_check '{"wait_s": 40}' --timeout 55
 
 ## Scripts
 
-- `scripts/run_skill.py` — run any saved skill against the robot.
-- `scripts/camera_selftest.py` — open, publish, consume and record the camera,
-  end to end, with no browser.
-- `scripts/camera_test.py` — grab one frame and ask the vision model about it.
-  Saves the frame so you can see what it was given. Publishes from a browser
+- `scripts/run_skill.py` runs a saved skill against the robot.
+- `scripts/camera_selftest.py` tests the camera path end to end.
+- `scripts/camera_test.py` grabs one frame and asks the vision model about it,
+  saving the frame so you can see what it was given. It publishes from a browser
   tab, so it also works when the camera is on another machine.
-- `scripts/test_mcp_server.py` — spawn the MCP server over stdio and list its tools.
-- `scripts/test_connectivity.py` — verify LiveKit credentials.
-- `scripts/test_llm_latency.py` — time-to-first-token for Groq models.
-
-## Hardware profile
-
-**`robot.toml` is the source of truth** for what is plugged in where — not this
-README, and not environment variables. Rebuilt the robot? Edit that one file.
-
-It feeds three things that used to disagree with each other:
-
-- `brick_api` addresses sensors by their configured input and skips probing for
-  sensors the profile doesn't list, so a missing one is reported plainly.
-- Motors are addressable **by role**: `motor("head", 30, 0.5)` rather than a port
-  letter memorised from documentation.
-- The model is told the actual layout in its tool descriptions, instead of
-  inferring it. That would have prevented a real bug — `follow_wall` was
-  originally written against an ultrasonic sensor this build doesn't have.
-
-`list_devices` compares the profile against what the brick actually reports and
-names any disagreement, so the two can't silently drift.
-
-Anything invalid is rejected at load: duplicate ports, a named motor reusing a
-drive port, unknown sensor types, out-of-range inputs, two sensors on one input.
-
-Sensors are also mode-based — one mode at a time, and switching costs ~15 ms on
-the colour sensor, ~45 ms on the IR sensor.
+- `scripts/test_mcp_server.py` starts the MCP server over stdio and lists its
+  tools.
+- `scripts/test_connectivity.py` checks the LiveKit credentials.
+- `scripts/test_llm_latency.py` measures time to first token for Groq models.
