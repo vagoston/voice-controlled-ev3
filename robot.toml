@@ -14,10 +14,11 @@ name = "EV3D4"
 # `left` and `right` are ordinary names, but drive() requires both.
 #
 # Both drive motors are mirror-mounted, so positive speed drives backwards.
-# Verified 2026-09-18: with reversed = false the robot drove backwards on
-# calibrate_movement.
-left = { port = "B", kind = "large", reversed = true }
-right = { port = "C", kind = "large", reversed = true }
+# Ports verified 2026-09-19 by running one wheel alone: B is the RIGHT wheel.
+# A swap here is invisible in straight-line driving, since both wheels get the
+# same command, and only shows up as mirrored turns.
+left = { port = "C", kind = "large", reversed = true }
+right = { port = "B", kind = "large", reversed = true }
 # Keep notes short: they are read by the agent on every call.
 head = { port = "A", kind = "medium", gear_ratio = 3, range_degrees = 65, note = "Positive turns it left. Position means nothing until centre_motor('head') has found the stops. Turning the head does not turn the robot." }
 
