@@ -15,8 +15,8 @@ _devices = {}
 _started = time.time()
 
 _MOTORS = _PROFILE["motors"]
-_LEFT_PORT = _MOTORS.get("left")
-_RIGHT_PORT = _MOTORS.get("right")
+_LEFT_PORT = _MOTORS["left"]["port"] if "left" in _MOTORS else None
+_RIGHT_PORT = _MOTORS["right"]["port"] if "right" in _MOTORS else None
 _REVERSED = _PROFILE.get("reversed", [])
 _LEFT_SIGN = -1 if "left" in _REVERSED else 1
 _RIGHT_SIGN = -1 if "right" in _REVERSED else 1
