@@ -18,7 +18,8 @@ name = "EV3D4"
 # calibrate_movement.
 left = { port = "B", kind = "large", reversed = true }
 right = { port = "C", kind = "large", reversed = true }
-head = { port = "A", kind = "medium", gear_ratio = 3, range_degrees = 65, note = "Positive turns the head LEFT. Travel is limited to about 65 degrees total, and the encoder zeroes wherever the head happened to be at power-on, so its position means nothing until centre_motor('head') has found both stops. Turning the head does not turn the robot. Finding the limits needs real torque: gentle pulses stop on friction and report a false limit at less than half the true range." }
+# Keep notes short: they are read by the agent on every call.
+head = { port = "A", kind = "medium", gear_ratio = 3, range_degrees = 65, note = "Positive turns it left. Position means nothing until centre_motor('head') has found the stops. Turning the head does not turn the robot." }
 
 [sensors]
 touch = { input = 1 }

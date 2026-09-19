@@ -285,6 +285,37 @@ def _push_to_limit(device, direction, speed_pct, budget=4.0):
     return device.position
 
 
+def _goto(device, target, speed_pct, budget=6.0):
+    """Drive a motor to an absolute encoder position.
+
+    on_to_position takes an absolute target and decelerates into it, landing
+    within a degree from either direction. Do not replace this with repeated
+    short moves: the motor cannot make a move smaller than roughly six
+    degrees, so a correction loop oscillates around the target instead of
+    converging, and stops wherever it happens to be when it gives up.
+
+    Absolute targeting is reliable even though on_for_degrees is not -- that
+    one derives its target from a stale position reading.
+    """
+    from ev3dev2.motor import SpeedPercent
+
+    goal = int(round(target))
+    device.stop_action = "brake"
+    for _ in range(3):
+        device.on_to_position(SpeedPercent(_speed(abs(speed_pct))), goal, block=False)
+        # The driver takes a moment to report itself running. Polling before
+        # then sees is_running False, cuts the move off mid-deceleration and
+        # lets it coast past the target.
+        time.sleep(0.05)
+        deadline = time.time() + budget
+        while device.is_running and time.time() < deadline and not out_of_time():
+            time.sleep(0.02)
+        time.sleep(0.25)
+        if abs(device.position - goal) <= 2 or out_of_time():
+            break
+    return device.position
+
+
 def centre_motor(name="head", speed_pct=40):
     """Find a limited motor's two stops and park it midway between them.
 
@@ -309,14 +340,7 @@ def centre_motor(name="head", speed_pct=40):
     time.sleep(0.2)
 
     middle = (positive + negative) / 2.0
-    # Short pulses on the way back, so coasting does not carry it past centre.
-    while device.position < middle - 2 and not out_of_time():
-        device.on(SpeedPercent(_speed(15)))
-        time.sleep(0.04)
-        device.off(brake=False)
-        time.sleep(0.08)
-    device.off(brake=False)
-    time.sleep(0.25)
+    _goto(device, middle, speed_pct)
 
     span = positive - negative
     return {
