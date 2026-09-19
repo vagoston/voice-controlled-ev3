@@ -34,6 +34,11 @@ class Motor:
     reversed: bool = False
     """True when positive speed turns this motor the 'wrong' way, as happens
     with mirror-mounted drive motors."""
+    gear_ratio: float = 1.0
+    """Motor degrees per degree of the thing it drives."""
+    range_degrees: float | None = None
+    """Total travel between mechanical limits, in output degrees. None means
+    free-running."""
 
     @property
     def sign(self) -> int:
@@ -97,7 +102,14 @@ class RobotProfile:
         """The shape shipped to the brick. Notes stay on the host."""
         return {
             "name": self.name,
-            "motors": {name: m.port for name, m in self.motors.items()},
+            "motors": {
+                name: {
+                    "port": m.port,
+                    "gear_ratio": m.gear_ratio,
+                    "range_degrees": m.range_degrees,
+                }
+                for name, m in self.motors.items()
+            },
             "reversed": [name for name, m in self.motors.items() if m.reversed],
             "sensors": {s.kind: s.input for s in self.sensors.values()},
             "geometry": {
@@ -123,6 +135,18 @@ class RobotProfile:
         for name, motor in sorted(self.motors.items()):
             kind = f" {motor.kind}" if motor.kind else ""
             lines.append(f"    {name} on port {motor.port}{kind}")
+            if motor.gear_ratio != 1.0:
+                lines.append(
+                    f"      geared {motor.gear_ratio:g}:1, so {motor.gear_ratio:g}"
+                    " motor degrees turn it 1 degree"
+                )
+            if motor.range_degrees is not None:
+                half = motor.range_degrees / 2
+                lines.append(
+                    f"      travel is limited to {motor.range_degrees:g} degrees"
+                    f" (+/-{half:g} from centre); centre_motor({name!r}) finds"
+                    " the middle"
+                )
             if motor.note:
                 lines.append(f"      note: {motor.note}")
 
@@ -183,6 +207,14 @@ def _parse_motor(name: str, value: object, path: Path) -> Motor:
     if not isinstance(reversed_, bool):
         raise ProfileError(f"{path}: motor {name!r} reversed must be true or false")
 
+    gear_ratio = value.get("gear_ratio", 1.0)
+    if not isinstance(gear_ratio, (int, float)) or gear_ratio <= 0:
+        raise ProfileError(f"{path}: motor {name!r} gear_ratio must be a positive number")
+
+    span = value.get("range_degrees")
+    if span is not None and (not isinstance(span, (int, float)) or span <= 0):
+        raise ProfileError(f"{path}: motor {name!r} range_degrees must be positive")
+
     note = value.get("note")
     return Motor(
         name=name,
@@ -190,6 +222,8 @@ def _parse_motor(name: str, value: object, path: Path) -> Motor:
         kind=kind,
         note=str(note) if note else None,
         reversed=reversed_,
+        gear_ratio=float(gear_ratio),
+        range_degrees=float(span) if span is not None else None,
     )
 
 

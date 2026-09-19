@@ -243,13 +243,89 @@ def resolve_port(ref):
     """Port letter for a motor name from the profile, or a bare port letter."""
     key = str(ref).lower()
     if key in _MOTORS:
-        return _MOTORS[key]
+        return _MOTORS[key]["port"]
     return str(ref).upper()
 
 
 def motor_roles():
     """Names this robot's motors answer to, from the profile."""
     return sorted(_MOTORS.keys())
+
+
+def gear_ratio(name):
+    """Motor degrees per degree of whatever that motor drives."""
+    entry = _MOTORS.get(str(name).lower())
+    return entry.get("gear_ratio", 1.0) if entry else 1.0
+
+
+def _push_to_limit(device, direction, speed_pct, budget=4.0):
+    """Drive until the mechanism stops moving, then cut power.
+
+    Uses real torque on purpose. Gentle pulses cannot overcome static friction
+    and report a limit in open air: a sweep at speed 12 measured the head's
+    travel as 28 degrees where it is really 65.
+    """
+    from ev3dev2.motor import SpeedPercent
+
+    device.on(SpeedPercent(_speed(abs(speed_pct)) * direction))
+    started = time.time()
+    last_pos = device.position
+    last_move = started
+    while time.time() - started < budget and not out_of_time():
+        position = device.position
+        if position != last_pos:
+            last_pos = position
+            last_move = time.time()
+        elif time.time() - last_move > 0.25:
+            break
+        time.sleep(0.02)
+    # Coast rather than brake: never hold torque against a hard stop.
+    device.off(brake=False)
+    time.sleep(0.25)
+    return device.position
+
+
+def centre_motor(name="head", speed_pct=40):
+    """Find a limited motor's two stops and park it midway between them.
+
+    The encoder zeroes wherever the motor happened to be at power-on, so the
+    middle has to be rediscovered each boot -- there is no position worth
+    storing. Returns a dict describing what it found, in output degrees.
+    """
+    from ev3dev2.motor import SpeedPercent
+
+    device = _motor(name)
+    if device is None:
+        raise ValueError(
+            "No motor called {!r}. This robot has: {}".format(
+                name, ", ".join(motor_roles())
+            )
+        )
+
+    ratio = gear_ratio(name)
+    positive = _push_to_limit(device, 1, speed_pct)
+    time.sleep(0.2)
+    negative = _push_to_limit(device, -1, speed_pct)
+    time.sleep(0.2)
+
+    middle = (positive + negative) / 2.0
+    # Short pulses on the way back, so coasting does not carry it past centre.
+    while device.position < middle - 2 and not out_of_time():
+        device.on(SpeedPercent(_speed(15)))
+        time.sleep(0.04)
+        device.off(brake=False)
+        time.sleep(0.08)
+    device.off(brake=False)
+    time.sleep(0.25)
+
+    span = positive - negative
+    return {
+        "centre": middle,
+        "position": device.position,
+        "offset_degrees": (device.position - middle) / ratio,
+        "span_degrees": span / ratio,
+        "limits_motor": (negative, positive),
+    }
 
 
 def _motor(port):
